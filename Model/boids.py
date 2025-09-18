@@ -33,7 +33,7 @@ class _StepAggregator3D(nn.Module):
         # 条件特征 = 输入特征 + 当前 flow(3通道)
         self.backbone = nn.Sequential(
             nn.Conv3d(in_ch + 3, hidden, 3, padding=1), nn.ReLU(inplace=True),
-            nn.Conv3d(hidden, hidden, 1, padding=0), torch.nn.BatchNorm3d(hidden), nn.ReLU(inplace=True),
+            nn.Conv3d(hidden, hidden, 1, padding=0), nn.ReLU(inplace=True),
         )
         self.kernel_head = nn.Conv3d(hidden, k*k*k, 1)  # (B,k^3,D,H,W)
 
@@ -95,7 +95,7 @@ class IterNeighborhoodDeform3D(nn.Module):
         if self.map_to_vec:
             self.mapper = nn.Sequential(
                 nn.Conv3d(in_ch, hidden, 3, padding=1), nn.ReLU(inplace=True),
-                nn.Conv3d(hidden, hidden, 1, padding=0), torch.nn.BatchNorm3d(hidden), nn.ReLU(inplace=True),
+                nn.Conv3d(hidden, hidden, 1, padding=0), nn.ReLU(inplace=True),
                 nn.Conv3d(hidden, 3, 1)  # -> (B,3,D,H,W)
             )
 
@@ -131,4 +131,4 @@ class IterNeighborhoodDeform3D(nn.Module):
             flow = flow + step * delta
             flows.append(flow)
 
-            return flow, {}
+        return flow, {}

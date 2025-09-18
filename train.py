@@ -65,7 +65,7 @@ def train():
     # UNet = U_Network(len(vol_size), nf_enc, nf_dec).to(device)
     # UNet = NCA(len(vol_size)).to(device)
     print(len(vol_size))
-    UNet = IterNeighborhoodDeform3D(in_ch=2, k=5, hidden=16, steps=5,
+    UNet = IterNeighborhoodDeform3D(in_ch=2, k=3, hidden=16, steps=5,
                              map_to_vec=True, init_zero=False,
                              pixelwise_gate=True, learn_step=True).to(device)
     STN = SpatialTransformer(vol_size).to(device)
