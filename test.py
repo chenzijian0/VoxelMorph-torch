@@ -4,12 +4,13 @@ import glob
 # external imports
 import torch
 import numpy as np
-import torchsnooper
+# import torchsnooper
 import SimpleITK as sitk
 # internal imports
 from Model import losses
 from Model.config import args
-from Model.model import U_Network, SpatialTransformer
+from Model.model import U_Network, SpatialTransformer, NCA
+from Model.boids import IterNeighborhoodDeform3D
 
 
 def make_dirs():
@@ -60,7 +61,10 @@ def test():
     else:
         nf_dec = [32, 32, 32, 32, 32, 16, 16]
     # Set up model
-    UNet = U_Network(len(vol_size), nf_enc, nf_dec).to(device)
+    # UNet = NCA(len(vol_size)).to(device)
+    UNet = IterNeighborhoodDeform3D(in_ch=2, k=5, hidden=16, steps=5,
+                             map_to_vec=True, init_zero=False,
+                             pixelwise_gate=True, learn_step=True).to(device)
     UNet.load_state_dict(torch.load(args.checkpoint_path))
     STN_img = SpatialTransformer(vol_size).to(device)
     STN_label = SpatialTransformer(vol_size, mode="nearest").to(device)
@@ -82,7 +86,8 @@ def test():
         input_label = torch.from_numpy(input_label).to(device).float()
 
         # 获得配准后的图像和label
-        pred_flow = UNet(input_moving, input_fixed)
+        image_cat = torch.cat([input_moving, input_fixed], dim=1)
+        pred_flow = UNet(image_cat)
         pred_img = STN_img(input_moving, pred_flow)
         pred_label = STN_label(input_label, pred_flow)
 

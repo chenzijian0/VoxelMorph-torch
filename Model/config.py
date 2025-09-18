@@ -38,6 +38,6 @@ parser.add_argument("--test_dir", type=str, help="test data directory",
 parser.add_argument("--label_dir", type=str, help="label data directory",
                     dest="label_dir", default='LPBA40/label')
 parser.add_argument("--checkpoint_path", type=str, help="model weight file",
-                    dest="checkpoint_path", default="./Checkpoint/LPBA40.pth")
+                    dest="checkpoint_path", default="./Checkpoint/1000.pth")
 
 args = parser.parse_args()
