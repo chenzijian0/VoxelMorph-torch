@@ -16,7 +16,7 @@ parser.add_argument("--result_dir", type=str, help="results folder",
 parser.add_argument("--train_dir", type=str, help="data folder with training vols",
                     dest="train_dir", default="LPBA40/train")
 parser.add_argument("--lr", type=float, help="learning rate",
-                    dest="lr", default=1e-8)
+                    dest="lr", default=1e-4)
 parser.add_argument("--n_iter", type=int, help="number of iterations",
                     dest="n_iter", default=15000)
 parser.add_argument("--sim_loss", type=str, help="image similarity loss: mse or ncc",
