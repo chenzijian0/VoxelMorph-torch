@@ -62,9 +62,10 @@ def test():
         nf_dec = [32, 32, 32, 32, 32, 16, 16]
     # Set up model
     # UNet = NCA(len(vol_size)).to(device)
-    UNet = IterNeighborhoodDeform3D(in_ch=2, k=5, hidden=16, steps=5,
-                             map_to_vec=True, init_zero=False,
-                             pixelwise_gate=True, learn_step=True).to(device)
+    # UNet = IterNeighborhoodDeform3D(in_ch=2, k=5, hidden=16, steps=5,
+    #                          map_to_vec=True, init_zero=False,
+    #                          pixelwise_gate=True, learn_step=True).to(device)
+    UNet = NCA(len(vol_size)).to(device)
     UNet.load_state_dict(torch.load(args.checkpoint_path))
     STN_img = SpatialTransformer(vol_size).to(device)
     STN_label = SpatialTransformer(vol_size, mode="nearest").to(device)

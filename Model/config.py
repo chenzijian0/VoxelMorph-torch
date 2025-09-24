@@ -16,7 +16,7 @@ parser.add_argument("--result_dir", type=str, help="results folder",
 parser.add_argument("--train_dir", type=str, help="data folder with training vols",
                     dest="train_dir", default="LPBA40/train")
 parser.add_argument("--lr", type=float, help="learning rate",
-                    dest="lr", default=4e-4)
+                    dest="lr", default=1e-8)
 parser.add_argument("--n_iter", type=int, help="number of iterations",
                     dest="n_iter", default=15000)
 parser.add_argument("--sim_loss", type=str, help="image similarity loss: mse or ncc",
@@ -26,7 +26,7 @@ parser.add_argument("--alpha", type=float, help="regularization parameter",
 parser.add_argument("--batch_size", type=int, help="batch_size",
                     dest="batch_size", default=1)
 parser.add_argument("--n_save_iter", type=int, help="frequency of model saves",
-                    dest="n_save_iter", default=1000)
+                    dest="n_save_iter", default=200)
 parser.add_argument("--model_dir", type=str, help="models folder",
                     dest="model_dir", default='./Checkpoint')
 parser.add_argument("--log_dir", type=str, help="logs folder",
@@ -38,6 +38,6 @@ parser.add_argument("--test_dir", type=str, help="test data directory",
 parser.add_argument("--label_dir", type=str, help="label data directory",
                     dest="label_dir", default='LPBA40/label')
 parser.add_argument("--checkpoint_path", type=str, help="model weight file",
-                    dest="checkpoint_path", default="./Checkpoint/1000.pth")
+                    dest="checkpoint_path", default="./Checkpoint/5800.pth")
 
 args = parser.parse_args()

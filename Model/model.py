@@ -15,7 +15,7 @@ class NCA(nn.Module):
     # def __init__(self, kernel_size = 7, steps = 30, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
     # def __init__(self, kernel_size = 9, steps = 30, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
     # def __init__(self, kernel_size = 7, steps = 5, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
-    def __init__(self, dim, kernel_size=7, steps=10, fire_rate=0.5, n_channels=16, hidden_size=64):
+    def __init__(self, dim, kernel_size=3, steps=10, fire_rate=1, n_channels=16, hidden_size=64):
         # def __init__(self, kernel_size = 7, steps = 50, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 90, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 10, fire_rate= 0.25, n_channels = 16, hidden_size = 64):
@@ -35,12 +35,24 @@ class NCA(nn.Module):
         self.out_feats = n_channels  # Set this dynamically
         self.dim = dim
         # Model components
-        self.fc0 = nn.Linear(n_channels * 2, hidden_size)
-        self.fc1 = nn.Linear(hidden_size, n_channels, bias=False)
+        # self.fc0 = nn.Linear(n_channels * 2, hidden_size)
+        # self.fc1 = nn.Linear(hidden_size, n_channels, bias=False)
         padding = int((kernel_size - 1) / 2)
         self.p0 = nn.Conv3d(n_channels, n_channels, kernel_size=kernel_size, stride=1, padding=padding,
                             padding_mode="reflect")
-        self.bn = torch.nn.BatchNorm3d(hidden_size)
+        self.p1 = nn.Conv3d(n_channels * 2, hidden_size, kernel_size=1, stride=1, padding=0)
+        self.p2 = nn.Conv3d(hidden_size, n_channels, kernel_size=1, stride=1, padding=0)
+        self.p = nn.ModuleList()
+
+        self.mian = nn.ModuleList()
+
+        for i in range(steps):
+            self.mian.append(nn.Conv3d(n_channels, n_channels, kernel_size=kernel_size, stride=1, padding=padding,
+                            padding_mode="reflect"))
+            self.p.append(self.conv_block(n_channels * 2, hidden_size, 1))
+            self.p.append(self.conv_block(hidden_size, n_channels, 1))
+
+        # self.bn = torch.nn.BatchNorm3d(hidden_size)
 
         # self.avg_pool = torch.nn.AvgPool3d(3, 2, 1)
         # self.up = torch.nn.Upsample(scale_factor=2, mode='nearest')
@@ -60,27 +72,42 @@ class NCA(nn.Module):
         self.flow.weight = nn.Parameter(Normal(0, 1e-5).sample(self.flow.weight.shape))
         self.flow.bias = nn.Parameter(torch.zeros(self.flow.bias.shape))
 
-    def perceive(self, x):
-        y = self.p0(x)
+    def conv_block(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, batchnorm=True):
+        if batchnorm:
+            layer = nn.Sequential(
+                Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding),
+                nn.InstanceNorm3d(out_channels, affine=True),
+                nn.LeakyReLU(0.2))
+        else:
+            layer = nn.Sequential(
+                Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding),
+                nn.LeakyReLU(0.2))
+        return layer
+    def perceive(self, x, ite):
+        y = self.mian[ite](x)
         y = torch.cat((x, y), 1)
         return y
 
-    def update(self, x_in):
+    def update(self, x_in, ite):
         # x = x_in.transpose(1,4)
         # dx = self.perceive(x)
-        dx = self.perceive(x_in)
-        dx = dx.transpose(1, 4)
-        dx = self.fc0(dx)
-        dx = dx.transpose(1, 4)
-        dx = self.bn(dx)
-        dx = dx.transpose(1, 4)
-        dx = F.relu(dx)
-        dx = self.fc1(dx)
+        dx = self.perceive(x_in, ite)
+        # dx = dx.transpose(1, 4)
+        # dx = self.fc0(dx)
+        # dx = self.p1(dx)
+        # dx = dx.transpose(1, 4)
+        # dx = self.bn(dx)
+        # dx = dx.transpose(1, 4)
+        # dx = F.relu(dx)
+        # dx = dx.transpose(1, 4)
+        # dx = self.p2(dx)
+        dx = self.p[ite*2](dx)
+        dx = self.p[ite*2+1](dx)
 
         stochastic = torch.rand([dx.size(0), dx.size(1), dx.size(2), dx.size(3), 1]) < self.fire_rate
         stochastic = stochastic.float().cuda()
         dx = dx * stochastic
-        x = x_in + dx.transpose(1, 4)
+        x = x_in + dx
         # x = x.transpose(1,4)
 
         return x
@@ -97,7 +124,7 @@ class NCA(nn.Module):
         # x_downscaled = x_full
 
         for step in range(self.steps):
-            x_downscaled = self.update(x_downscaled)
+            x_downscaled = self.update(x_downscaled, step)
 
         x = self.up(x_downscaled)
 

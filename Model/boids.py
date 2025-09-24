@@ -92,6 +92,10 @@ class IterNeighborhoodDeform3D(nn.Module):
         self.init_zero = init_zero
 
         self.map_to_vec = map_to_vec and (not init_zero)
+
+        self.avg_pool = torch.nn.AvgPool3d(3, 3, 0)
+        self.up = torch.nn.Upsample(scale_factor=3, mode='nearest')
+
         if self.map_to_vec:
             self.mapper = nn.Sequential(
                 nn.Conv3d(in_ch, hidden, 3, padding=1), nn.ReLU(inplace=True),
@@ -123,12 +127,11 @@ class IterNeighborhoodDeform3D(nn.Module):
           extras: {"flows":list, "weights":list, "step":tensor} （可选）
         """
         flow = self._init_flow(x)
-        flows, weights = [flow], []
-
+        x_downscaled = self.avg_pool(x)
         for _ in range(self.steps):
-            delta = self.stepper(x, flow)
+            delta = self.stepper(x_downscaled, flow)
+            x = self.up(delta)
             step = F.softplus(self.log_step) if self.learn_step else self.fixed_step
             flow = flow + step * delta
-            flows.append(flow)
 
         return flow, {}

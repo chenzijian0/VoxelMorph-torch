@@ -14,6 +14,9 @@ from Model.config import args
 from Model.datagenerators import Dataset
 from Model.model import U_Network, SpatialTransformer, NCA
 from Model.boids import IterNeighborhoodDeform3D
+import optuna
+
+
 
 def count_parameters(model):
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
@@ -63,11 +66,11 @@ def train():
     else:
         nf_dec = [32, 32, 32, 32, 32, 16, 16]
     # UNet = U_Network(len(vol_size), nf_enc, nf_dec).to(device)
-    # UNet = NCA(len(vol_size)).to(device)
+    UNet = NCA(len(vol_size)).to(device)
     print(len(vol_size))
-    UNet = IterNeighborhoodDeform3D(in_ch=2, k=3, hidden=16, steps=5,
-                             map_to_vec=True, init_zero=False,
-                             pixelwise_gate=True, learn_step=True).to(device)
+    # UNet = IterNeighborhoodDeform3D(in_ch=2, k=3, hidden=16, steps=5,
+    #                          map_to_vec=True, init_zero=False,
+    #                          pixelwise_gate=True, learn_step=True).to(device)
     STN = SpatialTransformer(vol_size).to(device)
     # UNet.train()
     UNet.train()
@@ -101,7 +104,7 @@ def train():
 
         # Run the data through the model to produce warp and flow field
         image_cat = torch.cat([input_moving, input_fixed], dim=1)
-        flow_m2f,none_1 = UNet(image_cat)
+        flow_m2f = UNet(image_cat)
         m2f = STN(input_moving, flow_m2f)
 
         # Calculate loss
