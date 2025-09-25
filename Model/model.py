@@ -15,21 +15,14 @@ class NCA(nn.Module):
     # def __init__(self, kernel_size = 7, steps = 30, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
     # def __init__(self, kernel_size = 9, steps = 30, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
     # def __init__(self, kernel_size = 7, steps = 5, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
-    def __init__(self, dim, kernel_size=3, steps=10, fire_rate=1, n_channels=16, hidden_size=64):
+    def __init__(self, dim, kernel_size=7, steps=10, fire_rate=1, n_channels=16, hidden_size=64):
         # def __init__(self, kernel_size = 7, steps = 50, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 90, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 10, fire_rate= 0.25, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 10, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 10, fire_rate = 0.75, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 10, fire_rate = 1.0, n_channels = 16, hidden_size = 64):
-        r"""
-        Parameters:
-            kernel_size: Kernel size of NCA -> Relevant for perceptive field -> perceptive field = (kernel_size-1)/2 * steps
-            steps: Times the NCA model will be applied to the input
-            fire_rate = Chance that a cell is active at given step
-            n_channels = Channels of NCA -> In channels are equal to out channels
-            hidden_size = Hidden size of NCA
-        """
+
         super().__init__()
         # -- Set variable that defines number of feature channels for NCAs output after forward pass -- #
         self.out_feats = n_channels  # Set this dynamically
