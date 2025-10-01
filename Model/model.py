@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,7 +17,7 @@ class NCA(nn.Module):
     # def __init__(self, kernel_size = 7, steps = 30, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
     # def __init__(self, kernel_size = 9, steps = 30, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
     # def __init__(self, kernel_size = 7, steps = 5, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
-    def __init__(self, dim, kernel_size=7, steps=10, fire_rate=1, n_channels=16, hidden_size=64):
+    def __init__(self, dim, kernel_size=7, steps=10, fire_rate=1, n_channels=16, hidden_size=64, flow_param='spherical', max_disp = 8.0):
         # def __init__(self, kernel_size = 7, steps = 50, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 90, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 10, fire_rate= 0.25, n_channels = 16, hidden_size = 64):
@@ -27,6 +29,8 @@ class NCA(nn.Module):
         # -- Set variable that defines number of feature channels for NCAs output after forward pass -- #
         self.out_feats = n_channels  # Set this dynamically
         self.dim = dim
+        self.flow_param = flow_param
+        self.max_disp = max_disp
         # Model components
         # self.fc0 = nn.Linear(n_channels * 2, hidden_size)
         # self.fc1 = nn.Linear(hidden_size, n_channels, bias=False)
@@ -59,11 +63,30 @@ class NCA(nn.Module):
         self.steps = steps
         self.n_channels = n_channels
 
-        self.flow = Conv3d(self.out_feats, dim, kernel_size=3, padding=1)
+        self.flow = Conv3d(self.out_feats, 4, kernel_size=3, padding=1)
 
         # init flow layer with small weights and bias
         self.flow.weight = nn.Parameter(Normal(0, 1e-5).sample(self.flow.weight.shape))
         self.flow.bias = nn.Parameter(torch.zeros(self.flow.bias.shape))
+
+    def _decode_flow_vec(self, q, max_disp=None):
+        # q: (B, C, D, H, W)  ->  C = (dir_dim + 1)
+        dir_dim = 3 if self.dim == 3 else 2
+        v = q[:, :dir_dim, ...]  # 原始方向 logits
+        rho_raw = q[:, dir_dim:dir_dim + 1, ...]
+
+        # 方向向量归一化（数值稳健做法之一）
+        eps = 1e-6
+        v_norm = v / (v.norm(dim=1, keepdim=True) + eps)
+
+        # 幅值：非负（可有上界）
+        if max_disp is None:
+            rho = F.softplus(rho_raw)  # (0, +inf)
+        else:
+            rho = max_disp * torch.sigmoid(rho_raw)  # (0, max_disp)
+
+        flow = rho * v_norm  # (u,v[,w])
+        return flow
 
     def conv_block(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, batchnorm=True):
         if batchnorm:
@@ -106,41 +129,36 @@ class NCA(nn.Module):
         return x
 
     def forward(self, x):
-        r"""
-        Forward pass.
-        """
-        # Prepare input
-        x_full = torch.zeros((x.shape[0], self.n_channels, x.shape[2], x.shape[3], x.shape[4]),
-                             dtype=torch.float32).cuda()
+        B, C, D, H, W = x.shape  # x: (B, 2, D, H, W) moving/fixed
+        device = x.device
+        x_full = torch.zeros((B, self.n_channels, D, H, W), dtype=torch.float32, device=device)
         x_full[:, 0:2, ...] = x
         x_downscaled = self.avg_pool(x_full)
-        # x_downscaled = x_full
 
         for step in range(self.steps):
             x_downscaled = self.update(x_downscaled, step)
 
-        x = self.up(x_downscaled)
+        x_feat = self.up(x_downscaled)
 
-        if x_full.size() != x.size():
-            # -- Zero pad to original size -- #
-            x_ = torch.zeros((x.shape[0], x_full.size(1) - x.size(1), x.shape[2], x.shape[3], x.shape[4]),
-                             dtype=torch.float32).cuda()
-            x = torch.concat([x, x_], dim=1)
-            x_ = torch.zeros((x.shape[0], x.shape[1], x_full.size(2) - x.size(2), x.shape[3], x.shape[4]),
-                             dtype=torch.float32).cuda()
-            x = torch.concat([x, x_], dim=2)
-            x_ = torch.zeros((x.shape[0], x.shape[1], x.shape[2], x_full.size(3) - x.size(3), x.shape[4]),
-                             dtype=torch.float32).cuda()
-            x = torch.concat([x, x_], dim=3)
-            x_ = torch.zeros((x.shape[0], x.shape[1], x.shape[2], x.shape[3], x_full.size(4) - x.size(4)),
-                             dtype=torch.float32).cuda()
-            x = torch.concat([x, x_], dim=4)
+        # 尺寸对齐（保持你的原逻辑）
+        if x_full.size() != x_feat.size():
+            padC = x_full.size(1) - x_feat.size(1)
+            if padC > 0:
+                x_feat = torch.cat([x_feat, torch.zeros(B, padC, x_feat.size(2), x_feat.size(3), x_feat.size(4), device=device)], dim=1)
+            padZ = x_full.size(2) - x_feat.size(2)
+            if padZ > 0:
+                x_feat = torch.cat([x_feat, torch.zeros(B, x_feat.size(1), padZ, x_feat.size(3), x_feat.size(4), device=device)], dim=2)
+            padY = x_full.size(3) - x_feat.size(3)
+            if padY > 0:
+                x_feat = torch.cat([x_feat, torch.zeros(B, x_feat.size(1), x_feat.size(2), padY, x_feat.size(4), device=device)], dim=3)
+            padX = x_full.size(4) - x_feat.size(4)
+            if padX > 0:
+                x_feat = torch.cat([x_feat, torch.zeros(B, x_feat.size(1), x_feat.size(2), x_feat.size(3), padX, device=device)], dim=4)
 
-        flow_field = self.flow(x)
-        # resize flow for integration
-        pos_flow = flow_field
+        q = self.flow(x_feat)          # q = [θ, ρ] 或 [θ, φ, ρ] 或 [u,v,(w)]
+        pos_flow = self._decode_flow_vec(q)  # 统一返回 Cartesian 位移 (u,v[,w])
+
         return pos_flow
-        # return x_downscaled
 
 
 

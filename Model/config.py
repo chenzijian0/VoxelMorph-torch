@@ -22,11 +22,11 @@ parser.add_argument("--n_iter", type=int, help="number of iterations",
 parser.add_argument("--sim_loss", type=str, help="image similarity loss: mse or ncc",
                     dest="sim_loss", default='ncc')
 parser.add_argument("--alpha", type=float, help="regularization parameter",
-                    dest="alpha", default=0.1)  # recommend 1.0 for ncc, 0.01 for mse
+                    dest="alpha", default=2)  # recommend 1.0 for ncc, 0.01 for mse
 parser.add_argument("--batch_size", type=int, help="batch_size",
                     dest="batch_size", default=1)
 parser.add_argument("--n_save_iter", type=int, help="frequency of model saves",
-                    dest="n_save_iter", default=1000)
+                    dest="n_save_iter", default=200)
 parser.add_argument("--model_dir", type=str, help="models folder",
                     dest="model_dir", default='./Checkpoint')
 parser.add_argument("--log_dir", type=str, help="logs folder",
@@ -38,6 +38,6 @@ parser.add_argument("--test_dir", type=str, help="test data directory",
 parser.add_argument("--label_dir", type=str, help="label data directory",
                     dest="label_dir", default='LPBA40/label')
 parser.add_argument("--checkpoint_path", type=str, help="model weight file",
-                    dest="checkpoint_path", default="./Checkpoint/400.pth")
+                    dest="checkpoint_path", default="./Checkpoint/7400.pth")
 
 args = parser.parse_args()
