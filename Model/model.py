@@ -17,7 +17,7 @@ class NCA(nn.Module):
     # def __init__(self, kernel_size = 7, steps = 30, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
     # def __init__(self, kernel_size = 9, steps = 30, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
     # def __init__(self, kernel_size = 7, steps = 5, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
-    def __init__(self, dim, kernel_size=7, steps=10, fire_rate=1, n_channels=16, hidden_size=64, flow_param='spherical', max_disp = 8.0):
+    def __init__(self, dim, kernel_size=7, steps=10, fire_rate=1, n_channels=16, hidden_size=64, flow_param='cartesian', max_disp = 8.0):
         # def __init__(self, kernel_size = 7, steps = 50, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 90, fire_rate = 0.5, n_channels = 16, hidden_size = 64):
         # def __init__(self, kernel_size = 7, steps = 10, fire_rate= 0.25, n_channels = 16, hidden_size = 64):
@@ -63,29 +63,58 @@ class NCA(nn.Module):
         self.steps = steps
         self.n_channels = n_channels
 
-        self.flow = Conv3d(self.out_feats, 4, kernel_size=3, padding=1)
+        dir_dim = 3 if self.dim == 3 else 2
+        if self.flow_param == 'spherical':
+            out_c = dir_dim + 1  # [direction, rho]
+        else:  # 'cartesian' or 'svf'
+            out_c = dir_dim  # 笛卡尔 (u,v,w) 或 速度 (vx,vy,vz)
+        self.flow = Conv3d(self.out_feats, out_c, kernel_size=3, padding=1)
 
         # init flow layer with small weights and bias
         self.flow.weight = nn.Parameter(Normal(0, 1e-5).sample(self.flow.weight.shape))
         self.flow.bias = nn.Parameter(torch.zeros(self.flow.bias.shape))
 
+    def _grid_identity(self, shape, device):
+        # shape = (B, C, D, H, W); 返回标准化坐标网格 [-1,1]
+        B, _, D, H, W = shape
+        zs = torch.linspace(-1, 1, D, device=device)
+        ys = torch.linspace(-1, 1, H, device=device)
+        xs = torch.linspace(-1, 1, W, device=device)
+        z, y, x = torch.meshgrid(zs, ys, xs, indexing='ij')
+        grid = torch.stack((x, y, z), dim=0).unsqueeze(0).repeat(B, 1, 1, 1, 1)  # (B,3,D,H,W)
+        return grid
+
+    def _warp(self, field, disp):  # field: (B,C,D,H,W); disp: 像素位移 → 需归一化到[-1,1]
+        B, _, D, H, W = field.shape
+        norm = torch.tensor([W - 1, H - 1, D - 1], device=field.device).view(1, 3, 1, 1, 1)
+        grid = self._grid_identity(field.shape, field.device) + 2.0 * disp / norm
+        grid = grid.permute(0, 2, 3, 4, 1)  # (B,D,H,W,3)
+        return F.grid_sample(field, grid, mode='bilinear', padding_mode='border', align_corners=True)
+
+    def _compose(self, d1, d2):
+        # compose displacements: ϕ = d1 ∘ d2 = d2 + warp(d1, d2)
+        return d2 + self._warp(d1, d2)
+
+    def _exp_velocity(self, v, n=7):
+        # scaling-and-squaring
+        v = v / (2 ** n)
+        disp = v
+        for _ in range(n):
+            disp = self._compose(disp, disp)
+        return disp
     def _decode_flow_vec(self, q, max_disp=None):
         # q: (B, C, D, H, W)  ->  C = (dir_dim + 1)
         dir_dim = 3 if self.dim == 3 else 2
-        v = q[:, :dir_dim, ...]  # 原始方向 logits
-        rho_raw = q[:, dir_dim:dir_dim + 1, ...]
-
-        # 方向向量归一化（数值稳健做法之一）
-        eps = 1e-6
-        v_norm = v / (v.norm(dim=1, keepdim=True) + eps)
-
-        # 幅值：非负（可有上界）
-        if max_disp is None:
-            rho = F.softplus(rho_raw)  # (0, +inf)
-        else:
-            rho = max_disp * torch.sigmoid(rho_raw)  # (0, max_disp)
-
-        flow = rho * v_norm  # (u,v[,w])
+        if self.flow_param == 'spherical':
+            v = q[:, :dir_dim]
+            rho_raw = q[:, dir_dim:dir_dim + 1]
+            v = v / (v.norm(dim=1, keepdim=True) + 1e-6)
+            rho = (max_disp * torch.sigmoid(rho_raw)) if (max_disp is not None) else F.softplus(rho_raw)
+            flow = rho * v
+        elif self.flow_param in ['cartesian', 'svf']:
+            flow = q
+            if max_disp is not None:  # 限幅，防梯度爆
+                flow = max_disp * torch.tanh(flow)
         return flow
 
     def conv_block(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, batchnorm=True):
@@ -156,7 +185,11 @@ class NCA(nn.Module):
                 x_feat = torch.cat([x_feat, torch.zeros(B, x_feat.size(1), x_feat.size(2), x_feat.size(3), padX, device=device)], dim=4)
 
         q = self.flow(x_feat)          # q = [θ, ρ] 或 [θ, φ, ρ] 或 [u,v,(w)]
-        pos_flow = self._decode_flow_vec(q)  # 统一返回 Cartesian 位移 (u,v[,w])
+        if self.flow_param == 'svf':
+            v = self._decode_flow_vec(q, max_disp=self.max_disp)  # 这里的max_disp可较大，后续指数映射会抑制过大位移
+            pos_flow = self._exp_velocity(v, n=7)
+        else:
+            pos_flow = self._decode_flow_vec(q, max_disp=self.max_disp)
 
         return pos_flow
 

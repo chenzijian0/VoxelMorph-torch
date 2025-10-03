@@ -67,6 +67,7 @@ def train():
         nf_dec = [32, 32, 32, 32, 32, 16, 16]
     # UNet = U_Network(len(vol_size), nf_enc, nf_dec).to(device)
     UNet = NCA(len(vol_size)).to(device)
+    # UNet.load_state_dict(torch.load(args.checkpoint_path))
     print(len(vol_size))
     # UNet = IterNeighborhoodDeform3D(in_ch=2, k=3, hidden=16, steps=5,
     #                          map_to_vec=True, init_zero=False,
